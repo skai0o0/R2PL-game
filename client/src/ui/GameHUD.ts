@@ -3,7 +3,8 @@ import { ViewportManager } from '../core/ViewportManager';
 import { FogOfWarLayer } from '../renderer/FogOfWarLayer';
 import { BeaconRenderer } from '../renderer/BeaconRenderer';
 import { CarouselModal } from './CarouselModal';
-import { KeyTier } from '../constants/terminology';
+import { KeyTier, GRID_CONFIG } from '../constants/terminology';
+import { VFXManager } from '../renderer3d/VFXManager';
 
 export interface HUDGameState {
   points: number;
@@ -26,6 +27,7 @@ export class GameHUD {
   private readonly fogLayer: FogOfWarLayer;
   private readonly beaconRenderer: BeaconRenderer;
   private readonly carouselModal: CarouselModal;
+  private readonly vfxManager?: VFXManager;
   private onToggleEditorCallback: () => void;
 
   private state: HUDGameState = {
@@ -44,13 +46,15 @@ export class GameHUD {
     fogLayer: FogOfWarLayer,
     beaconRenderer: BeaconRenderer,
     carouselModal: CarouselModal,
-    onToggleEditor: () => void
+    onToggleEditor: () => void,
+    vfxManager?: VFXManager
   ) {
     this.viewportManager = viewportManager;
     this.fogLayer = fogLayer;
     this.beaconRenderer = beaconRenderer;
     this.carouselModal = carouselModal;
     this.onToggleEditorCallback = onToggleEditor;
+    this.vfxManager = vfxManager;
 
     this.container = document.createElement('div');
     this.container.id = 'game-hud-overlay';
@@ -74,7 +78,7 @@ export class GameHUD {
           <div class="hud-logo-icon">▲</div>
           <div class="hud-title-group">
             <span class="hud-main-title">ROAD TO PREDATOR LEAGUE</span>
-            <span class="hud-sub-title">HÀNH TRÌNH KHÁM PHÁ • 1.000.000 Ô TRI THỨC</span>
+            <span class="hud-sub-title">SA BÀN SỐ 2.5D ISOMETRIC • 1.000.000 Ô</span>
           </div>
         </div>
 
@@ -126,7 +130,7 @@ export class GameHUD {
           <button id="btn-open-carousel" class="cyber-btn cyber-btn-gacha" title="Mở Rương với Vòng Quay Carousel CS:GO">
             🎁 VÒNG QUAY MỞ RƯƠNG
           </button>
-          <button id="btn-explore-knowledge" class="cyber-btn cyber-btn-cyan" title="Khai phá vùng tri thức (Tan sương mù bán kính R=5)">
+          <button id="btn-explore-knowledge" class="cyber-btn cyber-btn-cyan" title="Khai phá vùng tri thức (VFX Sóng xung kích làm tan sương mù)">
             ⚡ KHAI PHÁ TRI THỨC
           </button>
           <button id="btn-light-beacon" class="cyber-btn cyber-btn-gold" title="Nạp than củi đốt đài lửa rực sáng">
@@ -141,7 +145,7 @@ export class GameHUD {
       <!-- Left Landmark Teleport Sidebar -->
       <aside class="hud-landmarks-sidebar">
         <div class="sidebar-header">
-          <span class="sidebar-title">📍 10 BIỂU TƯỢNG QUỐC GIA</span>
+          <span class="sidebar-title">📍 10 BIỂU TƯỢNG QUỐC GIA 3D</span>
         </div>
         <div class="landmarks-list" id="landmarks-jump-list">
           ${DEFAULT_10_LANDMARKS.map(
@@ -161,6 +165,8 @@ export class GameHUD {
   }
 
   private bindEvents(): void {
+    const ts = GRID_CONFIG.TILE_SIZE;
+
     // Open Carousel
     const btnCarousel = this.container.querySelector('#btn-open-carousel');
     btnCarousel?.addEventListener('click', () => {
@@ -174,23 +180,35 @@ export class GameHUD {
       });
     });
 
-    // Explore Knowledge (Reveals Fog of War around camera focus)
+    // Explore Knowledge with Shockwave Pulse Ripple VFX
     const btnExplore = this.container.querySelector('#btn-explore-knowledge');
     btnExplore?.addEventListener('click', () => {
       const center = this.viewportManager.viewport.center;
       const gridPos = this.viewportManager.worldToGrid(center.x, center.y);
+
+      // Trigger 3D Neon Cyan Shockwave Ripple
+      this.vfxManager?.triggerPulseRipple(center.x, center.y, 6, '#00ffe8');
+
+      // Clear Fog
       this.fogLayer.revealZone(gridPos.col, gridPos.row, 6);
       this.state.points += 50;
       this.updateStatsDisplay();
     });
 
-    // Light Beacon
+    // Light Beacon with 3D Plasma Flame Particles
     const btnBeacon = this.container.querySelector('#btn-light-beacon');
     btnBeacon?.addEventListener('click', () => {
       const center = this.viewportManager.viewport.center;
       const gridPos = this.viewportManager.worldToGrid(center.x, center.y);
-      this.beaconRenderer.registerBeacon(`beacon_${Date.now()}`, gridPos.col, gridPos.row, 3);
-      this.beaconRenderer.addCharcoal(`beacon_${Date.now()}`, 3);
+      const beaconId = `beacon_${Date.now()}`;
+
+      this.beaconRenderer.registerBeacon(beaconId, gridPos.col, gridPos.row, 3);
+      this.beaconRenderer.addCharcoal(beaconId, 3);
+
+      // Register 3D Flame Particle System
+      this.vfxManager?.registerBeaconVFX(beaconId, center.x, center.y, '#00ffe8');
+      this.vfxManager?.triggerPulseRipple(center.x, center.y, 10, '#ffb800');
+
       this.fogLayer.revealZone(gridPos.col, gridPos.row, 10);
       if (this.state.charcoal > 0) this.state.charcoal--;
       this.updateStatsDisplay();
@@ -202,7 +220,7 @@ export class GameHUD {
       this.onToggleEditorCallback();
     });
 
-    // Landmark Teleports
+    // Landmark Teleports with Pulse
     const jumpBtns = this.container.querySelectorAll('.landmark-jump-btn');
     jumpBtns.forEach((btn) => {
       btn.addEventListener('click', (e) => {
@@ -211,6 +229,7 @@ export class GameHUD {
         const y = parseInt(target.getAttribute('data-y') || '460', 10);
         this.viewportManager.focusOnGrid(x, y, 0.6, true);
         this.fogLayer.revealZone(x, y, 12);
+        this.vfxManager?.triggerPulseRipple((x + 0.5) * ts, (y + 0.5) * ts, 12, '#00ffe8');
       });
     });
   }

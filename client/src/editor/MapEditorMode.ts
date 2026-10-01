@@ -7,18 +7,21 @@ import { GhostPlacement, GhostTemplate } from './GhostPlacement';
 import { EditorPalette } from './EditorPalette';
 import { LayoutSerializer } from './LayoutSerializer';
 import { createInitialLayout } from '../constants/defaultLayout';
+import { GLTFModelRenderer } from '../renderer3d/GLTFModelRenderer';
 
 export type EditorStateChangeCallback = (isActive: boolean) => void;
 
 /**
  * MapEditorMode: "The Sims" Map Editor Controller.
  * Handles placement, rotation, deletion, moving, and JSON serialization.
+ * Synchronizes both 2D Pixi sa bàn and 3D Isometric models.
  */
 export class MapEditorMode {
   private readonly viewportManager: ViewportManager;
   private readonly grid: KnowledgeGrid;
   private readonly board: PredatorBoard;
   private readonly fogLayer: FogOfWarLayer;
+  private readonly gltfRenderer?: GLTFModelRenderer;
 
   private ghost: GhostPlacement;
   private palette: EditorPalette;
@@ -34,12 +37,14 @@ export class MapEditorMode {
     viewportManager: ViewportManager,
     grid: KnowledgeGrid,
     board: PredatorBoard,
-    fogLayer: FogOfWarLayer
+    fogLayer: FogOfWarLayer,
+    gltfRenderer?: GLTFModelRenderer
   ) {
     this.viewportManager = viewportManager;
     this.grid = grid;
     this.board = board;
     this.fogLayer = fogLayer;
+    this.gltfRenderer = gltfRenderer;
 
     this.ghost = new GhostPlacement(viewportManager);
 
@@ -72,6 +77,7 @@ export class MapEditorMode {
     this.palette.setVisible(active);
     if (!active) {
       this.ghost.clear();
+      this.gltfRenderer?.updateGhostPreview(null, 0, 0, 0, true);
       this.activeTemplate = null;
       this.palette.clearSelection();
       this.board.selectEntity(null);
@@ -94,8 +100,9 @@ export class MapEditorMode {
     this.activeTemplate = template;
     this.ghost.setTemplate(template);
 
-    // If placing, temporarily disable viewport camera drag on left button
-    if (template) {
+    if (!template) {
+      this.gltfRenderer?.updateGhostPreview(null, 0, 0, 0, true);
+    } else {
       this.board.selectEntity(null);
     }
   }
@@ -114,12 +121,22 @@ export class MapEditorMode {
       if (e.key === 'r' || e.key === 'R') {
         if (this.ghost.isActive()) {
           this.ghost.rotate();
+          if (this.activeTemplate) {
+            this.gltfRenderer?.updateGhostPreview(
+              this.activeTemplate,
+              this.ghost.gridX,
+              this.ghost.gridY,
+              this.ghost.rotation,
+              true
+            );
+          }
         } else {
           // Rotate selected entity
           const selected = this.board.getSelectedEntity();
           if (selected) {
             selected.rotation = (selected.rotation + 90) % 360;
             this.board.addOrUpdateEntity(selected);
+            this.gltfRenderer?.addOrUpdateEntity(selected);
           }
         }
       } else if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -130,6 +147,7 @@ export class MapEditorMode {
       } else if (e.key === 'Escape') {
         if (this.ghost.isActive()) {
           this.ghost.clear();
+          this.gltfRenderer?.updateGhostPreview(null, 0, 0, 0, true);
           this.palette.clearSelection();
         } else {
           this.board.selectEntity(null);
@@ -159,6 +177,9 @@ export class MapEditorMode {
 
         const isAvailable = this.grid.isAreaAvailable(col, row, w, h);
         this.ghost.updatePosition(worldPos.x, worldPos.y, isAvailable);
+
+        // Update 3D Ghost preview in Three.js
+        this.gltfRenderer?.updateGhostPreview(this.activeTemplate, col, row, this.ghost.rotation, isAvailable);
       } else if (this.isDraggingEntity && this.draggedEntity) {
         // Drag existing entity
         const ts = GRID_CONFIG.TILE_SIZE;
@@ -174,6 +195,7 @@ export class MapEditorMode {
 
           this.grid.setAreaOccupied(col, row, this.draggedEntity.width, this.draggedEntity.height, true);
           this.board.addOrUpdateEntity(this.draggedEntity);
+          this.gltfRenderer?.addOrUpdateEntity(this.draggedEntity);
         }
       }
     });
@@ -263,8 +285,11 @@ export class MapEditorMode {
     // Update KnowledgeGrid
     this.grid.setAreaOccupied(col, row, w, h, true);
 
-    // Add to board
+    // Add to 2D board
     this.board.addOrUpdateEntity(newEntity);
+
+    // Add to 3D Renderer
+    this.gltfRenderer?.addOrUpdateEntity(newEntity);
 
     // Update vision in Fog of War
     this.fogLayer.revealPermanentAreas([newEntity]);
@@ -274,7 +299,7 @@ export class MapEditorMode {
   }
 
   /**
-   * Delete an entity from board and grid
+   * Delete an entity from board, grid and 3D renderer
    */
   public deleteEntity(id: string): void {
     const entity = this.board.getEntity(id);
@@ -282,6 +307,7 @@ export class MapEditorMode {
 
     this.grid.setAreaOccupied(entity.gridX, entity.gridY, entity.width, entity.height, false);
     this.board.removeEntity(id);
+    this.gltfRenderer?.removeEntity(id);
   }
 
   // --- Import / Export ---
@@ -308,8 +334,11 @@ export class MapEditorMode {
     // Clear current occupancy in grid
     this.grid.reset();
 
-    // Set entities in board
+    // Set entities in 2D board
     this.board.setEntities(entities);
+
+    // Set entities in 3D renderer
+    this.gltfRenderer?.setEntities(entities);
 
     // Mark occupancy in grid
     entities.forEach((e) => {
@@ -332,6 +361,7 @@ export class MapEditorMode {
     if (confirm('Bạn có chắc chắn muốn xóa toàn bộ vật thể trên bản đồ?')) {
       this.grid.reset();
       this.board.setEntities([]);
+      this.gltfRenderer?.clearAll();
       this.fogLayer.resetFogCanvas();
     }
   }
