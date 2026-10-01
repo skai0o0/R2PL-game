@@ -1,0 +1,22 @@
+{
+  "name": "r2pl-client",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "pixi.js": "^8.21.0",
+    "pixi-viewport": "^6.0.3",
+    "canvas-confetti": "^1.9.4"
+  },
+  "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
+    "@types/node": "^22.13.5",
+    "typescript": "^5.7.3",
+    "vite": "^6.2.0"
+  }
+}
